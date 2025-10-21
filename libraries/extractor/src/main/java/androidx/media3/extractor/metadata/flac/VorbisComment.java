@@ -19,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Metadata;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
 import com.google.common.base.Ascii;
 import com.google.common.primitives.Ints;
 
@@ -67,7 +68,8 @@ public class VorbisComment implements Metadata.Entry {
         builder.setAlbumArtist(value);
         break;
       case "TRACKNUMBER":
-        @Nullable Integer trackNumber = Ints.tryParse(value);
+        String[] trackNumbers = Util.split(value, "/");
+        @Nullable Integer trackNumber = Ints.tryParse(trackNumbers[0]);
         if (trackNumber != null) {
           builder.setTrackNumber(trackNumber);
         }
