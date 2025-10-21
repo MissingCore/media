@@ -98,6 +98,15 @@ public class VorbisComment implements Metadata.Entry {
       case "DESCRIPTION":
         builder.setDescription(value);
         break;
+      case "DATE":
+        // Should be formatted as `YYYY-MM-DD`.
+        String[] dateSegments = Util.split(value, "-");
+        @Nullable Integer year = Ints.tryParse(dateSegments[0]);
+        @Nullable Integer month =
+          dateSegments.length > 1 ? Ints.tryParse(dateSegments[1]): null;
+        @Nullable Integer day =
+          dateSegments.length > 2 ? Ints.tryParse(dateSegments[2]): null;
+        builder.setRecordingYear(year).setRecordingMonth(month).setRecordingDay(day);
       default:
         break;
     }
