@@ -15,7 +15,8 @@
  */
 package androidx.media3.common;
 
-import static androidx.media3.common.util.Assertions.checkArgument;
+import static androidx.media3.common.util.Util.convertToNullIfInvalid;
+import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.annotation.ElementType.FIELD;
 import static java.lang.annotation.ElementType.LOCAL_VARIABLE;
 import static java.lang.annotation.ElementType.METHOD;
@@ -78,6 +79,7 @@ public final class MediaMetadata {
     @Nullable private Integer releaseMonth;
     @Nullable private Integer releaseDay;
     @Nullable private CharSequence writer;
+    @Nullable private CharSequence author;
     @Nullable private CharSequence composer;
     @Nullable private CharSequence conductor;
     @Nullable private Integer discNumber;
@@ -120,6 +122,7 @@ public final class MediaMetadata {
       this.releaseMonth = mediaMetadata.releaseMonth;
       this.releaseDay = mediaMetadata.releaseDay;
       this.writer = mediaMetadata.writer;
+      this.author = mediaMetadata.author;
       this.composer = mediaMetadata.composer;
       this.conductor = mediaMetadata.conductor;
       this.discNumber = mediaMetadata.discNumber;
@@ -379,6 +382,14 @@ public final class MediaMetadata {
     @CanIgnoreReturnValue
     public Builder setWriter(@Nullable CharSequence writer) {
       this.writer = writer;
+      return this;
+    }
+
+    /** Sets the author. */
+    @CanIgnoreReturnValue
+    @UnstableApi
+    public Builder setAuthor(@Nullable CharSequence author) {
+      this.author = author;
       return this;
     }
 
@@ -1110,6 +1121,9 @@ public final class MediaMetadata {
   /** Optional writer. */
   @Nullable public final CharSequence writer;
 
+  /** Optional author. */
+  @UnstableApi @Nullable public final CharSequence author;
+
   /** Optional composer. */
   @Nullable public final CharSequence composer;
 
@@ -1193,6 +1207,7 @@ public final class MediaMetadata {
     this.releaseMonth = builder.releaseMonth;
     this.releaseDay = builder.releaseDay;
     this.writer = builder.writer;
+    this.author = builder.author;
     this.composer = builder.composer;
     this.conductor = builder.conductor;
     this.discNumber = builder.discNumber;
@@ -1473,7 +1488,7 @@ public final class MediaMetadata {
         .setGenre(bundle.getCharSequence(FIELD_GENRE))
         .setCompilation(bundle.getCharSequence(FIELD_COMPILATION))
         .setStation(bundle.getCharSequence(FIELD_STATION))
-        .setExtras(bundle.getBundle(FIELD_EXTRAS));
+        .setExtras(convertToNullIfInvalid(bundle.getBundle(FIELD_EXTRAS)));
 
     if (bundle.containsKey(FIELD_USER_RATING)) {
       @Nullable Bundle fieldBundle = bundle.getBundle(FIELD_USER_RATING);
