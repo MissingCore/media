@@ -75,14 +75,7 @@ public final class VorbisCommentTest {
   public void populateMediaMetadata_setsMediaMetadataValues_mergedFields() {
     String mergedTrackNumber = "3/12";
     String mergedDiscNumber = "1/3";
-    int trackNumber = 3;
-    int totalTracks = 12;
-    int discNumber = 1;
-    int totalDiscs = 3;
     String date = "2025-11-21";
-    int recordingYear = 2025;
-    int recordingMonth = 11;
-    int recordingDay = 21;
     List<Metadata.Entry> entries =
         ImmutableList.of(
             new VorbisComment("TRACKNUMBER", mergedTrackNumber),
@@ -95,12 +88,12 @@ public final class VorbisCommentTest {
     }
     MediaMetadata mediaMetadata = builder.build();
 
-    assertThat(mediaMetadata.trackNumber).isEqualTo(trackNumber);
-    assertThat(mediaMetadata.totalTrackCount).isEqualTo(totalTracks);
-    assertThat(mediaMetadata.discNumber).isEqualTo(discNumber);
-    assertThat(mediaMetadata.totalDiscCount).isEqualTo(totalDiscs);
-    assertThat(mediaMetadata.recordingYear).isEqualTo(recordingYear);
-    assertThat(mediaMetadata.recordingMonth).isEqualTo(recordingMonth);
-    assertThat(mediaMetadata.recordingDay).isEqualTo(recordingDay);
+    assertThat(mediaMetadata.trackNumber).isEqualTo(3);
+    assertThat(mediaMetadata.totalTrackCount).isEqualTo(12);
+    assertThat(mediaMetadata.discNumber).isEqualTo(1);
+    assertThat(mediaMetadata.totalDiscCount).isEqualTo(3);
+    assertThat(mediaMetadata.recordingYear).isEqualTo(2025);
+    assertThat(mediaMetadata.recordingMonth).isEqualTo(11);
+    assertThat(mediaMetadata.recordingDay).isEqualTo(21);
   }
 }
