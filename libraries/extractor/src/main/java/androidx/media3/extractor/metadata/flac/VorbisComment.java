@@ -70,8 +70,10 @@ public class VorbisComment implements Metadata.Entry {
       case "TRACKNUMBER":
         String[] trackNumbers = Util.split(value, "/");
         @Nullable Integer trackNumber = Ints.tryParse(trackNumbers[0]);
+        @Nullable Integer totalTrackCount =
+          trackNumbers.length > 1 ? Ints.tryParse(trackNumbers[1]) : null;
         if (trackNumber != null) {
-          builder.setTrackNumber(trackNumber);
+          builder.setTrackNumber(trackNumber).setTotalTrackCount(totalTrackCount);
         }
         break;
       case "TOTALTRACKS":
@@ -81,9 +83,12 @@ public class VorbisComment implements Metadata.Entry {
         }
         break;
       case "DISCNUMBER":
-        @Nullable Integer discNumber = Ints.tryParse(value);
+        String[] discNumbers = Util.split(value, "/");
+        @Nullable Integer discNumber = Ints.tryParse(discNumbers[0]);
+        @Nullable Integer totalDiscCount =
+          discNumbers.length > 1 ? Ints.tryParse(discNumbers[1]) : null;
         if (discNumber != null) {
-          builder.setDiscNumber(discNumber);
+          builder.setDiscNumber(discNumber).setTotalDiscCount(totalDiscCount);
         }
         break;
       case "TOTALDISCS":
