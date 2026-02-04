@@ -36,6 +36,7 @@ public class TextInformationFrameTest {
     String albumTitle = "album title";
     String albumArtist = "album Artist";
     String trackNumberInfo = "11/17";
+    String discNumberInfo = "1/3";
     String recordingYear = "2000";
     String recordingMonth = "07";
     String recordingDay = "10";
@@ -62,6 +63,10 @@ public class TextInformationFrameTest {
                 /* id= */ "TRK",
                 /* description= */ null,
                 /* values= */ ImmutableList.of(trackNumberInfo)),
+            new TextInformationFrame(
+                /* id= */ "TPA",
+                /* description= */ null,
+                /* values= */ ImmutableList.of(discNumberInfo)),
             new TextInformationFrame(
                 /* id= */ "TYE",
                 /* description= */ null,
@@ -96,6 +101,8 @@ public class TextInformationFrameTest {
     assertThat(mediaMetadata.albumArtist.toString()).isEqualTo(albumArtist);
     assertThat(mediaMetadata.trackNumber).isEqualTo(11);
     assertThat(mediaMetadata.totalTrackCount).isEqualTo(17);
+    assertThat(mediaMetadata.discNumber).isEqualTo(1);
+    assertThat(mediaMetadata.totalDiscCount).isEqualTo(3);
     assertThat(mediaMetadata.recordingYear).isEqualTo(2000);
     assertThat(mediaMetadata.recordingMonth).isEqualTo(7);
     assertThat(mediaMetadata.recordingDay).isEqualTo(10);
