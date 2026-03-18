@@ -2,6 +2,35 @@
 
 ## 1.9
 
+### 1.9.3 (2026-03-13)
+
+This release includes the following changes since
+[1.9.2 release](#192-2026-02-06):
+
+*   Audio:
+    *   Fix bug where playback gets stuck when playing a playlist of gapless
+        audio in compressed offload mode.
+
+### 1.9.2 (2026-02-06)
+
+This release includes the following changes since
+[1.9.1 release](#191-2026-01-26):
+
+*   ExoPlayer:
+    *   Fix bug where `ProgressiveMediaSource` propagates out-of-date timeline
+        info to player and the queued periods unexpectedly get removed
+        ([#3016](https://github.com/androidx/media/issues/3016)).
+*   Audio:
+    *   Improve the retry logic of `AudioOutput` initialization in
+        `DefaultAudioSink`
+        ([#2905](https://github.com/androidx/media/issues/2905)).
+*   Session:
+    *   Fix issue where system UI button placement workaround negatively affects
+        other UI surface like Android Auto or manufacturers not needing the
+        workaround ([#3041](https://github.com/androidx/media/issues/3041)).
+*   Cast extension:
+    *   Fix bug where transferring from Cast to local playback was broken.
+
 ### 1.9.1 (2026-01-26)
 
 This release includes the following changes since
