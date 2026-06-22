@@ -58,17 +58,18 @@ import androidx.media3.test.utils.FakeTimeline;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.LargeTest;
+import androidx.test.filters.SdkSuppress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Assert;
-import org.junit.Assume;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Rule;
@@ -210,8 +211,8 @@ public class MediaSessionTest {
   }
 
   @Test
+  @SdkSuppress(minSdkVersion = 31)
   public void builderSetSessionActivity_nonActivityIntent_throwsIllegalArgumentException() {
-    Assume.assumeTrue(SDK_INT >= 31);
     PendingIntent pendingIntent =
         PendingIntent.getBroadcast(
             ApplicationProvider.getApplicationContext(),
@@ -228,8 +229,8 @@ public class MediaSessionTest {
   }
 
   @Test
+  @SdkSuppress(minSdkVersion = 31)
   public void setSessionActivity_nonActivityIntent_throwsIllegalArgumentException() {
-    Assume.assumeTrue(SDK_INT >= 31);
     PendingIntent pendingIntent =
         PendingIntent.getBroadcast(
             ApplicationProvider.getApplicationContext(),
@@ -387,15 +388,10 @@ public class MediaSessionTest {
   @Test
   public void creatingTwoSessionWithSameId() {
     String sessionId = "testSessionId";
-    MediaSession session =
-        new MediaSession.Builder(
-                context, new MockPlayer.Builder().setApplicationLooper(handler.getLooper()).build())
-            .setId(sessionId)
-            .build();
+    Player player = new MockPlayer.Builder().setApplicationLooper(handler.getLooper()).build();
+    MediaSession session = new MediaSession.Builder(context, player).setId(sessionId).build();
 
-    MediaSession.Builder builderWithSameId =
-        new MediaSession.Builder(
-            context, new MockPlayer.Builder().setApplicationLooper(handler.getLooper()).build());
+    MediaSession.Builder builderWithSameId = new MediaSession.Builder(context, player);
     try {
       builderWithSameId.setId(sessionId).build();
       assertWithMessage(
@@ -407,7 +403,8 @@ public class MediaSessionTest {
 
     session.release();
     // Creating a new session with ID of the closed session is okay.
-    MediaSession sessionWithSameId = builderWithSameId.build();
+    MediaSession sessionWithSameId =
+        new MediaSession.Builder(context, player).setId(sessionId).build();
     sessionWithSameId.release();
   }
 
@@ -482,6 +479,33 @@ public class MediaSessionTest {
 
     player.awaitMethodCalled(MockPlayer.METHOD_SEEK_TO, TIMEOUT_MS);
     assertThat(player.seekPositionMs).isEqualTo(testSeekPositionMs);
+  }
+
+  @Test
+  public void getPlatformToken_inApp_ensuresControllerInfoIsTrusted() throws Exception {
+    AtomicBoolean controllerIsTrusted = new AtomicBoolean();
+    MediaSession session =
+        sessionTestRule.ensureReleaseAfterTest(
+            new MediaSession.Builder(context, player)
+                .setId("getPlatformToken_inApp_ensuresControllerInfoIsTrusted")
+                .setCallback(
+                    new MediaSession.Callback() {
+                      @Override
+                      public MediaSession.ConnectionResult onConnect(
+                          MediaSession session, ControllerInfo controller) {
+                        controllerIsTrusted.set(controller.isTrusted());
+                        return MediaSession.Callback.super.onConnect(session, controller);
+                      }
+                    })
+                .build());
+    android.media.session.MediaSession.Token token = session.getPlatformToken();
+
+    android.media.session.MediaController platformController =
+        new android.media.session.MediaController(context, token);
+    platformController.getTransportControls().seekTo(100);
+    player.awaitMethodCalled(MockPlayer.METHOD_SEEK_TO, TIMEOUT_MS);
+
+    assertThat(controllerIsTrusted.get()).isTrue();
   }
 
   @Test
@@ -1137,7 +1161,7 @@ public class MediaSessionTest {
         MediaSessionManager.RemoteUserInfo.UNKNOWN_PID,
         MediaSessionManager.RemoteUserInfo.UNKNOWN_UID,
         MediaLibraryInfo.VERSION_INT,
-        MediaControllerStub.VERSION_INT,
+        MediaLibraryInfo.INTERFACE_VERSION,
         /* trusted= */ false,
         /* connectionHints= */ Bundle.EMPTY,
         /* isPackageNameVerified= */ false);

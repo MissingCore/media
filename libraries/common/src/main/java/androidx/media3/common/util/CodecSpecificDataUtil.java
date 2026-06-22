@@ -19,6 +19,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import android.annotation.SuppressLint;
 import android.media.MediaCodecInfo;
+import android.media.MediaCodecInfo.CodecProfileLevel;
 import android.util.Pair;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
@@ -26,11 +27,13 @@ import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
 import com.google.common.collect.ImmutableList;
+import com.google.common.primitives.UnsignedBytes;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -64,6 +67,9 @@ public final class CodecSpecificDataUtil {
   // HEVC.
   private static final String CODEC_ID_HEV1 = "hev1";
   private static final String CODEC_ID_HVC1 = "hvc1";
+  // VVC.
+  private static final String CODEC_ID_VVC1 = "vvc1";
+  private static final String CODEC_ID_VVI1 = "vvi1";
   // AV1.
   private static final String CODEC_ID_AV01 = "av01";
   // APV.
@@ -74,6 +80,37 @@ public final class CodecSpecificDataUtil {
   private static final String CODEC_ID_AC4 = "ac-4";
   // IAMF
   private static final String CODEC_ID_IAMF = "iamf";
+
+  // TODO(b/482032815): Replace VVC literal constants with MediaCodecInfo.CodecProfileLevel
+  // constants when compile SDK is updated to 37.
+  private static final int VVC_PROFILE_MAIN_8 = 0x01;
+  private static final int VVC_PROFILE_MAIN_10 = 0x02;
+  private static final int VVC_PROFILE_MAIN_10_STILL = 0x04;
+  private static final int VVC_PROFILE_MAIN_10_HDR10 = 0x1000;
+
+  private static final int VVC_MAIN_TIER_LEVEL_1_0 = 0x01;
+  private static final int VVC_MAIN_TIER_LEVEL_2_0 = 0x02;
+  private static final int VVC_MAIN_TIER_LEVEL_2_1 = 0x04;
+  private static final int VVC_MAIN_TIER_LEVEL_3_0 = 0x08;
+  private static final int VVC_MAIN_TIER_LEVEL_3_1 = 0x10;
+  private static final int VVC_MAIN_TIER_LEVEL_4_0 = 0x20;
+  private static final int VVC_HIGH_TIER_LEVEL_4_0 = 0x40;
+  private static final int VVC_MAIN_TIER_LEVEL_4_1 = 0x80;
+  private static final int VVC_HIGH_TIER_LEVEL_4_1 = 0x100;
+  private static final int VVC_MAIN_TIER_LEVEL_5_0 = 0x200;
+  private static final int VVC_HIGH_TIER_LEVEL_5_0 = 0x400;
+  private static final int VVC_MAIN_TIER_LEVEL_5_1 = 0x800;
+  private static final int VVC_HIGH_TIER_LEVEL_5_1 = 0x1000;
+  private static final int VVC_MAIN_TIER_LEVEL_5_2 = 0x2000;
+  private static final int VVC_HIGH_TIER_LEVEL_5_2 = 0x4000;
+  private static final int VVC_MAIN_TIER_LEVEL_6_0 = 0x8000;
+  private static final int VVC_HIGH_TIER_LEVEL_6_0 = 0x10000;
+  private static final int VVC_MAIN_TIER_LEVEL_6_1 = 0x20000;
+  private static final int VVC_HIGH_TIER_LEVEL_6_1 = 0x40000;
+  private static final int VVC_MAIN_TIER_LEVEL_6_2 = 0x80000;
+  private static final int VVC_HIGH_TIER_LEVEL_6_2 = 0x100000;
+  private static final int VVC_MAIN_TIER_LEVEL_6_3 = 0x200000;
+  private static final int VVC_HIGH_TIER_LEVEL_6_3 = 0x400000;
 
   private static final Pattern PROFILE_PATTERN = Pattern.compile("^\\D?(\\d+)$");
 
@@ -348,6 +385,44 @@ public final class CodecSpecificDataUtil {
   }
 
   /**
+   * Returns initialization data for Opus according to <a
+   * href="https://tools.ietf.org/html/rfc7845#section-5.1">RFC 7845: 5.1</a>.
+   *
+   * @param format The {@link Format}.
+   * @return A byte array containing the Opus initialization data.
+   */
+  public static byte[] getOpusInitializationData(Format format) {
+    checkArgument(!format.initializationData.isEmpty(), "csd-0 must be present for Opus.");
+    // If csd0 starts with "AOPUSHDR", it indicates a custom CSD structure of:
+    // Marker (AOPUSHDR) | Length (Length of OpusIdentificationHeader) |
+    // OpusIdentificationHeader("OpusHead" + data).
+    //     8 bytes       |                    8 bytes                  |   Length no. of bytes
+    // Reference:
+    // https://cs.android.com/android/platform/superproject/main/+/main:frameworks/av/media/module/foundation/include/media/stagefright/foundation/OpusHeader.h;l=28
+    int aopushdrSignatureLength = 8;
+    int opusHeadSignatureLength = 8;
+    byte[] csd0 = format.initializationData.get(0);
+    checkArgument(csd0.length >= opusHeadSignatureLength);
+    ParsableByteArray parsableCsd0 = new ParsableByteArray(csd0);
+    int payloadOffset = 0;
+    int payloadLength = csd0.length;
+    String csd0SignatureString = parsableCsd0.readString(aopushdrSignatureLength);
+    if (csd0SignatureString.equals("AOPUSHDR")) {
+      // The offset of the OpusIdentificationHeader data within the "AOPUSHDR" custom CSD.
+      int opusIdentificationHeaderOffset = 16;
+      checkArgument(csd0.length >= opusIdentificationHeaderOffset + opusHeadSignatureLength);
+      long identificationHeaderLength = parsableCsd0.readLittleEndianLong();
+      checkArgument(opusIdentificationHeaderOffset + identificationHeaderLength <= csd0.length);
+      payloadOffset = opusIdentificationHeaderOffset;
+      payloadLength = (int) identificationHeaderLength;
+    } else {
+      // Otherwise, the OpusIdentificationHeader must start with "OpusHead" signature.
+      checkArgument(csd0SignatureString.equals("OpusHead"));
+    }
+    return Arrays.copyOfRange(csd0, payloadOffset, payloadOffset + payloadLength);
+  }
+
+  /**
    * Parses an MPEG-4 Visual configuration information, as defined in ISO/IEC14496-2.
    *
    * @param videoSpecificConfig A byte array containing the MPEG-4 Visual configuration information
@@ -490,9 +565,9 @@ public final class CodecSpecificDataUtil {
         "Invalid APV CSD version: %s",
         initializationData[0]); // configurationVersion == 1
 
-    int profile = initializationData[5];
-    int level = initializationData[6];
-    int band = initializationData[7];
+    int profile = UnsignedBytes.toInt(initializationData[5]);
+    int level = UnsignedBytes.toInt(initializationData[6]);
+    int band = UnsignedBytes.toInt(initializationData[7]);
     return Util.formatInvariant("apv1.apvf%d.apvl%d.apvb%d", profile, level, band);
   }
 
@@ -547,6 +622,9 @@ public final class CodecSpecificDataUtil {
       case CODEC_ID_HEV1:
       case CODEC_ID_HVC1:
         return getHevcProfileAndLevel(format.codecs, parts, format.colorInfo);
+      case CODEC_ID_VVC1:
+      case CODEC_ID_VVI1:
+        return getVvcProfileAndLevel(format.codecs, parts, format.colorInfo);
       case CODEC_ID_AV01:
         return getAv1ProfileAndLevel(format.codecs, parts, format.colorInfo);
       case CODEC_ID_APV1:
@@ -557,6 +635,125 @@ public final class CodecSpecificDataUtil {
         return getAc4CodecProfileAndLevel(format.codecs, parts);
       case CODEC_ID_IAMF:
         return getIamfCodecProfileAndLevel(format.codecs, parts);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Returns VVC profile and level corresponding to the codec description string (as defined by
+   * ISO/IEC 14496-15:2021, Annex E.3) and its {@link ColorInfo}.
+   *
+   * @param codec The codec description string.
+   * @param parts The codec string split by ".".
+   * @param colorInfo The {@link ColorInfo}.
+   * @return A pair (profile constant, level constant) if profile and level are recognized, or
+   *     {@code null} otherwise.
+   */
+  @Nullable
+  private static Pair<Integer, Integer> getVvcProfileAndLevel(
+      String codec, String[] parts, @Nullable ColorInfo colorInfo) {
+    if (parts.length < 3) {
+      Log.w(TAG, "Ignoring malformed VVC codec string: " + codec);
+      return null;
+    }
+
+    int profileIdc;
+    try {
+      profileIdc = Integer.parseInt(parts[1]);
+    } catch (NumberFormatException e) {
+      Log.w(TAG, "Ignoring malformed VVC codec string: " + codec);
+      return null;
+    }
+
+    int profile;
+    if (profileIdc == 1) {
+      if (colorInfo != null && colorInfo.colorTransfer == C.COLOR_TRANSFER_ST2084) {
+        profile = VVC_PROFILE_MAIN_10_HDR10;
+      } else if (colorInfo != null && colorInfo.lumaBitdepth == 8) {
+        profile = VVC_PROFILE_MAIN_8;
+      } else {
+        profile = VVC_PROFILE_MAIN_10;
+      }
+    } else if (profileIdc == 65) {
+      profile = VVC_PROFILE_MAIN_10_STILL;
+    } else {
+      Log.w(TAG, "Unknown VVC profile IDC: " + parts[1]);
+      return null;
+    }
+
+    @Nullable String levelString = parts[2];
+    @Nullable Integer level = vvcCodecStringToProfileLevel(levelString);
+    if (level == null) {
+      Log.w(TAG, "Unknown VVC level string: " + levelString);
+      return null;
+    }
+    return new Pair<>(profile, level);
+  }
+
+  /**
+   * Returns the VVC level constant corresponding to the tier and level string (as defined by
+   * ISO/IEC 14496-15:2021, Annex E.3).
+   *
+   * <p>The string consists of a tier indicator ('L' for Main, 'H' for High) followed by the
+   * general_level_idc.
+   *
+   * @param codecString The VVC tier and level string (e.g., "L16" or "H64").
+   * @return The VVC level constant, or {@code null} if the level is not recognized.
+   * @see <a href="https://www.itu.int/rec/T-REC-H.266">ITU-T Rec. H.266, Annex A</a>
+   */
+  @Nullable
+  private static Integer vvcCodecStringToProfileLevel(@Nullable String codecString) {
+    if (codecString == null) {
+      return null;
+    }
+    switch (codecString) {
+      case "L16":
+        return VVC_MAIN_TIER_LEVEL_1_0;
+      case "L32":
+        return VVC_MAIN_TIER_LEVEL_2_0;
+      case "L35":
+        return VVC_MAIN_TIER_LEVEL_2_1;
+      case "L48":
+        return VVC_MAIN_TIER_LEVEL_3_0;
+      case "L51":
+        return VVC_MAIN_TIER_LEVEL_3_1;
+      case "L64":
+        return VVC_MAIN_TIER_LEVEL_4_0;
+      case "H64":
+        return VVC_HIGH_TIER_LEVEL_4_0;
+      case "L67":
+        return VVC_MAIN_TIER_LEVEL_4_1;
+      case "H67":
+        return VVC_HIGH_TIER_LEVEL_4_1;
+      case "L80":
+        return VVC_MAIN_TIER_LEVEL_5_0;
+      case "H80":
+        return VVC_HIGH_TIER_LEVEL_5_0;
+      case "L83":
+        return VVC_MAIN_TIER_LEVEL_5_1;
+      case "H83":
+        return VVC_HIGH_TIER_LEVEL_5_1;
+      case "L86":
+        return VVC_MAIN_TIER_LEVEL_5_2;
+      case "H86":
+        return VVC_HIGH_TIER_LEVEL_5_2;
+      case "L96":
+        return VVC_MAIN_TIER_LEVEL_6_0;
+      case "H96":
+        return VVC_HIGH_TIER_LEVEL_6_0;
+      case "L112":
+        return VVC_MAIN_TIER_LEVEL_6_1;
+      case "H112":
+        return VVC_HIGH_TIER_LEVEL_6_1;
+      case "L128":
+        return VVC_MAIN_TIER_LEVEL_6_2;
+      case "H128":
+        return VVC_HIGH_TIER_LEVEL_6_2;
+      case "L144":
+        return VVC_MAIN_TIER_LEVEL_6_3;
+      case "H144":
+        return VVC_HIGH_TIER_LEVEL_6_3;
       default:
         return null;
     }
@@ -807,6 +1004,36 @@ public final class CodecSpecificDataUtil {
     return new Pair<>(profile, level);
   }
 
+  /**
+   * Returns a Dolby Vision base layer codec MIME type of the provided {@link Format}.
+   *
+   * @param format The media format.
+   * @return A Dolby Vision base layer MIME type, or {@code null} if a Dolby Vision profile is not
+   *     identified.
+   */
+  @Nullable
+  public static String getDolbyVisionBaseLayerMimeType(Format format) {
+    if (!Objects.equals(format.sampleMimeType, MimeTypes.VIDEO_DOLBY_VISION)) {
+      return null;
+    }
+    @Nullable Pair<Integer, Integer> codecProfileAndLevel = getCodecProfileAndLevel(format);
+    if (codecProfileAndLevel == null) {
+      return null;
+    }
+    switch (codecProfileAndLevel.first) {
+      case CodecProfileLevel.DolbyVisionProfileDvheDtr: // profile 4
+      case CodecProfileLevel.DolbyVisionProfileDvheStn: // profile 5
+      case CodecProfileLevel.DolbyVisionProfileDvheSt: // profile 8
+        return MimeTypes.VIDEO_H265;
+      case CodecProfileLevel.DolbyVisionProfileDvavSe: // profile 9
+        return MimeTypes.VIDEO_H264;
+      case CodecProfileLevel.DolbyVisionProfileDvav110: // profile 10
+        return MimeTypes.VIDEO_AV1;
+      default:
+        return null;
+    }
+  }
+
   /** Returns H263 profile and level from codec string. */
   private static Pair<Integer, Integer> getH263ProfileAndLevel(String codec, String[] parts) {
     Pair<Integer, Integer> defaultProfileAndLevel =
@@ -965,14 +1192,9 @@ public final class CodecSpecificDataUtil {
 
     int profile = 0;
     if (profileInteger == 33) {
-      // TODO(b/426125651): Replace apv profile value with
-      // MediaCodecInfo.CodecProfileLevel.APVProfile422_10 when compile SDK is updated to 36.
-      profile = 0x01;
+      profile = MediaCodecInfo.CodecProfileLevel.APVProfile422_10;
     } else if (profileInteger == 44) {
-      // TODO(b/426125651): Replace apv profile value with
-      // MediaCodecInfo.CodecProfileLevel.APVProfile422_10HDR10Plus when compile SDK is updated
-      // to 36.
-      profile = 0x2000;
+      profile = MediaCodecInfo.CodecProfileLevel.APVProfile422_10HDR10Plus;
     } else {
       Log.w(TAG, "Ignoring invalid APV profile: " + profileInteger);
       return null;

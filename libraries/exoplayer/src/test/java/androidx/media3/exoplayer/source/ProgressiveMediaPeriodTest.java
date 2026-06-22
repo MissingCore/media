@@ -21,7 +21,6 @@ import static com.google.common.truth.Truth.assertThat;
 import android.net.Uri;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
-import androidx.media3.common.TrackGroup;
 import androidx.media3.common.util.Consumer;
 import androidx.media3.common.util.NullableType;
 import androidx.media3.datasource.AssetDataSource;
@@ -32,21 +31,19 @@ import androidx.media3.exoplayer.analytics.PlayerId;
 import androidx.media3.exoplayer.drm.DrmSessionEventListener;
 import androidx.media3.exoplayer.drm.DrmSessionManager;
 import androidx.media3.exoplayer.source.MediaSource.MediaPeriodId;
-import androidx.media3.exoplayer.source.chunk.MediaChunk;
-import androidx.media3.exoplayer.source.chunk.MediaChunkIterator;
-import androidx.media3.exoplayer.trackselection.BaseTrackSelection;
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.util.ReleasableExecutor;
+import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.Extractor;
 import androidx.media3.extractor.ExtractorsFactory;
 import androidx.media3.extractor.mp4.Mp4Extractor;
 import androidx.media3.extractor.png.PngExtractor;
 import androidx.media3.extractor.text.SubtitleParser;
+import androidx.media3.test.utils.FakeTrackSelection;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
@@ -118,7 +115,8 @@ public final class ProgressiveMediaPeriodTest {
     boolean[] streamResetFlags = new boolean[trackGroups.length];
 
     // Select only track 0.
-    selections[0] = new FakeTrackSelection(trackGroups.get(0), 0);
+    selections[0] =
+        new FakeTrackSelection(trackGroups.get(0), new int[] {0}, /* selectedIndex= */ 0);
     long unused =
         mediaPeriod.selectTracks(
             selections,
@@ -145,6 +143,60 @@ public final class ProgressiveMediaPeriodTest {
     mediaPeriod.release();
   }
 
+  @Test
+  public void getTrackGroups_multipleTracks_setsExpectedPrimaryTrackGroupId() throws Exception {
+    ProgressiveMediaPeriod mediaPeriod =
+        createMediaPeriod(Uri.parse("asset://android_asset/media/mp4/sample.mp4"));
+    TrackGroupArray trackGroups = mediaPeriod.getTrackGroups();
+
+    assertThat(trackGroups.length).isEqualTo(2);
+    assertThat(trackGroups.get(0).type).isEqualTo(C.TRACK_TYPE_VIDEO);
+    assertThat(trackGroups.get(1).type).isEqualTo(C.TRACK_TYPE_AUDIO);
+    assertThat(trackGroups.get(0).getFormat(0).primaryTrackGroupId).isNull();
+    assertThat(trackGroups.get(1).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(0).id);
+
+    mediaPeriod =
+        createMediaPeriod(
+            Uri.parse("asset://android_asset/media/mp4/h265_with_metadata_track.mp4"));
+    trackGroups = mediaPeriod.getTrackGroups();
+
+    assertThat(trackGroups.length).isEqualTo(3);
+    assertThat(trackGroups.get(0).type).isEqualTo(C.TRACK_TYPE_METADATA);
+    assertThat(trackGroups.get(1).type).isEqualTo(C.TRACK_TYPE_AUDIO);
+    assertThat(trackGroups.get(2).type).isEqualTo(C.TRACK_TYPE_VIDEO);
+    assertThat(trackGroups.get(0).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(2).id);
+    assertThat(trackGroups.get(1).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(2).id);
+    assertThat(trackGroups.get(2).getFormat(0).primaryTrackGroupId).isNull();
+
+    mediaPeriod =
+        createMediaPeriod(Uri.parse("asset://android_asset/media/mp4/sample_with_vobsub.mp4"));
+    trackGroups = mediaPeriod.getTrackGroups();
+
+    assertThat(trackGroups.length).isEqualTo(3);
+    assertThat(trackGroups.get(0).type).isEqualTo(C.TRACK_TYPE_VIDEO);
+    assertThat(trackGroups.get(1).type).isEqualTo(C.TRACK_TYPE_AUDIO);
+    assertThat(trackGroups.get(2).type).isEqualTo(C.TRACK_TYPE_TEXT);
+    assertThat(trackGroups.get(0).getFormat(0).primaryTrackGroupId).isNull();
+    assertThat(trackGroups.get(1).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(0).id);
+    assertThat(trackGroups.get(2).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(0).id);
+
+    mediaPeriod =
+        createMediaPeriod(Uri.parse("asset://android_asset/media/ts/sample_with_id3.adts"));
+    trackGroups = mediaPeriod.getTrackGroups();
+
+    assertThat(trackGroups.length).isEqualTo(2);
+    assertThat(trackGroups.get(0).type).isEqualTo(C.TRACK_TYPE_AUDIO);
+    assertThat(trackGroups.get(1).type).isEqualTo(C.TRACK_TYPE_METADATA);
+    assertThat(trackGroups.get(0).getFormat(0).primaryTrackGroupId).isNull();
+    assertThat(trackGroups.get(1).getFormat(0).primaryTrackGroupId)
+        .isEqualTo(trackGroups.get(0).id);
+  }
+
   private static @SampleStream.ReadDataResult int readProgressiveStream(
       ProgressiveMediaPeriod mediaPeriod, int trackIndex, DecoderInputBuffer buffer) {
     return mediaPeriod.readData(trackIndex, new FormatHolder(), buffer, /* readFlags= */ 0);
@@ -156,13 +208,37 @@ public final class ProgressiveMediaPeriodTest {
       @Nullable Executor executor,
       @Nullable Consumer<Executor> executorReleased)
       throws TimeoutException {
+    return createMediaPeriod(
+        Uri.parse("asset://android_asset/media/mp4/sample.mp4"),
+        extractor,
+        imageDurationUs,
+        executor,
+        executorReleased);
+  }
+
+  private static ProgressiveMediaPeriod createMediaPeriod(Uri uri) throws TimeoutException {
+    return createMediaPeriod(
+        uri,
+        new BundledExtractorsAdapter(new DefaultExtractorsFactory()),
+        /* imageDurationUs= */ C.TIME_UNSET,
+        /* executor= */ null,
+        /* executorReleased= */ null);
+  }
+
+  private static ProgressiveMediaPeriod createMediaPeriod(
+      Uri uri,
+      ProgressiveMediaExtractor extractor,
+      long imageDurationUs,
+      @Nullable Executor executor,
+      @Nullable Consumer<Executor> executorReleased)
+      throws TimeoutException {
     AtomicBoolean sourceInfoRefreshCalled = new AtomicBoolean(false);
     ProgressiveMediaPeriod.Listener sourceInfoRefreshListener =
         (durationUs, seekMap, isLive) -> sourceInfoRefreshCalled.set(true);
     MediaPeriodId mediaPeriodId = new MediaPeriodId(/* periodUid= */ new Object());
     ProgressiveMediaPeriod mediaPeriod =
         new ProgressiveMediaPeriod(
-            Uri.parse("asset://android_asset/media/mp4/sample.mp4"),
+            uri,
             new AssetDataSource(ApplicationProvider.getApplicationContext()),
             extractor,
             DrmSessionManager.DRM_UNSUPPORTED,
@@ -232,39 +308,6 @@ public final class ProgressiveMediaPeriodTest {
     public void run() {
       hasRun.set(true);
       super.run();
-    }
-  }
-
-  public static final class FakeTrackSelection extends BaseTrackSelection {
-
-    public FakeTrackSelection(TrackGroup group, int... tracks) {
-      super(group, tracks);
-    }
-
-    @Override
-    public void updateSelectedTrack(
-        long playbackPositionUs,
-        long bufferedDurationUs,
-        long availableDurationUs,
-        List<? extends MediaChunk> queue,
-        MediaChunkIterator[] mediaChunkIterators) {
-      // Do nothing.
-    }
-
-    @Override
-    public int getSelectedIndex() {
-      return 0;
-    }
-
-    @Override
-    public int getSelectionReason() {
-      return C.SELECTION_REASON_UNKNOWN;
-    }
-
-    @Nullable
-    @Override
-    public Object getSelectionData() {
-      return null;
     }
   }
 }

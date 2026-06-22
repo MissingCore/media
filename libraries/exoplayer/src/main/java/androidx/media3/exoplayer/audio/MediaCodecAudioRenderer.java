@@ -325,7 +325,6 @@ public class MediaCodecAudioRenderer extends MediaCodecRenderer implements Media
     rendererPriority = C.PRIORITY_PLAYBACK;
     eventDispatcher = new EventDispatcher(eventHandler, eventListener);
     nextBufferToWritePresentationTimeUs = C.TIME_UNSET;
-    audioSink.setListener(new AudioSinkListener());
   }
 
   @Override
@@ -511,7 +510,10 @@ public class MediaCodecAudioRenderer extends MediaCodecRenderer implements Media
 
   @Override
   protected DecoderReuseEvaluation canReuseCodec(
-      MediaCodecInfo codecInfo, Format oldFormat, Format newFormat) {
+      MediaCodecInfo codecInfo,
+      Format oldFormat,
+      Format newFormat,
+      boolean isAdaptiveFormatChange) {
     DecoderReuseEvaluation evaluation = codecInfo.canReuseCodec(oldFormat, newFormat);
 
     @DecoderDiscardReasons int discardReasons = evaluation.discardReasons;
@@ -705,6 +707,7 @@ public class MediaCodecAudioRenderer extends MediaCodecRenderer implements Media
     }
     audioSink.setPlayerId(getPlayerId());
     audioSink.setClock(getClock());
+    audioSink.setListener(new AudioSinkListener());
   }
 
   @Override
@@ -1090,6 +1093,26 @@ public class MediaCodecAudioRenderer extends MediaCodecRenderer implements Media
     if (SDK_INT >= 35) {
       mediaFormat.setInteger(MediaFormat.KEY_IMPORTANCE, max(0, -rendererPriority));
     }
+
+    if (Objects.equals(format.sampleMimeType, MimeTypes.AUDIO_IAMF)) {
+      // IAMF can support many different output Layouts, which are communicated to the Media Codec
+      // (IAMF Codec2 software decoder) as a channel mask.  We want to choose one appropriate
+      // for the current audio output configuration.
+      AudioCapabilities audioCapabilities = audioSink.getAudioCapabilities();
+      if (audioCapabilities == null) {
+        Log.w(
+            TAG,
+            "AudioCapabilities from the AudioSink are null, using default stereo output layout.");
+        mediaFormat.setInteger(MediaFormat.KEY_CHANNEL_MASK, AudioFormat.CHANNEL_OUT_STEREO);
+        mediaFormat.setInteger(MediaFormat.KEY_MAX_OUTPUT_CHANNEL_COUNT, 2);
+      } else {
+        int channelMask = IamfUtil.getOutputChannelMaskForCurrentConfiguration(audioCapabilities);
+        int channelCount = Integer.bitCount(channelMask);
+        mediaFormat.setInteger(MediaFormat.KEY_CHANNEL_MASK, channelMask);
+        mediaFormat.setInteger(MediaFormat.KEY_MAX_OUTPUT_CHANNEL_COUNT, channelCount);
+      }
+    }
+
     applyCodecParametersToMediaFormat(mediaFormat);
     return mediaFormat;
   }

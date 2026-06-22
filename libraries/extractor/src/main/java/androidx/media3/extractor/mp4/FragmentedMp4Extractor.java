@@ -254,9 +254,9 @@ public class FragmentedMp4Extractor implements Extractor {
   // Whether extractorOutput.seekMap has been called.
   private boolean haveOutputSeekMap;
 
-  // Whether we've encountered and merged multiple sidx boxes with different start times and
-  // extractorOutput.seekMap has been called.
-  private boolean haveOutputSeekMapFromMultipleSidx;
+  // Whether the upfront forward scan for sidx boxes (triggered by FLAG_MERGE_FRAGMENTED_SIDX) has
+  // successfully completed and output the merged seek map.
+  private boolean upfrontSidxScanComplete;
 
   private long seekPositionBeforeSidxProcessing;
 
@@ -540,7 +540,7 @@ public class FragmentedMp4Extractor implements Extractor {
               seekPosition.position = seekPositionBeforeSidxProcessing;
               seekPositionBeforeSidxProcessing = C.INDEX_UNSET;
               extractorOutput.seekMap(chunkIndexMerger.merge());
-              haveOutputSeekMapFromMultipleSidx = true;
+              upfrontSidxScanComplete = true;
               return Extractor.RESULT_SEEK;
             } else {
               reorderingBufferQueue.flush();
@@ -722,12 +722,14 @@ public class FragmentedMp4Extractor implements Extractor {
     } else if (leaf.type == Mp4Box.TYPE_sidx) {
       Pair<Long, ChunkIndex> result = parseSidx(leaf.data, input.getPosition());
       chunkIndexMerger.add(result.second);
-      if (!haveOutputSeekMap) {
-        segmentIndexEarliestPresentationTimeUs = result.first;
-        extractorOutput.seekMap(result.second);
+      segmentIndexEarliestPresentationTimeUs = result.first;
+      if (!upfrontSidxScanComplete) {
+        extractorOutput.seekMap(
+            chunkIndexMerger.size() == 1 ? result.second : chunkIndexMerger.merge());
         haveOutputSeekMap = true;
-      } else if ((flags & FLAG_MERGE_FRAGMENTED_SIDX) != 0
-          && !haveOutputSeekMapFromMultipleSidx
+      }
+      if ((flags & FLAG_MERGE_FRAGMENTED_SIDX) != 0
+          && !upfrontSidxScanComplete
           && chunkIndexMerger.size() > 1) {
         seekPositionBeforeSidxProcessing = input.getPosition();
       }
@@ -1747,7 +1749,7 @@ public class FragmentedMp4Extractor implements Extractor {
           processSeiNalUnitPayload =
               ceaTrackOutputs.length > 0
                   && numberOfNalUnitHeaderBytesToRead > 0
-                  && NalUnitUtil.isNalUnitSei(track.format, nalPrefixData[4]);
+                  && NalUnitUtil.isNalUnitSei(track.format, nalPrefixData, /* offset= */ 4);
           // Write the extra NAL unit bytes to the output.
           output.sampleData(nalPrefix, numberOfNalUnitHeaderBytesToRead);
           sampleBytesWritten += numberOfNalUnitHeaderBytesToRead;

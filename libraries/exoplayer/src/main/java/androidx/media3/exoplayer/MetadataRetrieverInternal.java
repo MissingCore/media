@@ -341,45 +341,54 @@ public final class MetadataRetrieverInternal implements AutoCloseable {
         if (released) {
           return true;
         }
-        switch (msg.what) {
-          case MESSAGE_PREPARE_SOURCE:
-            MediaItem mediaItem = (MediaItem) msg.obj;
-            mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
-            mediaSource.prepareSource(
-                mediaSourceCaller, /* mediaTransferListener= */ null, PlayerId.UNSET);
-            mediaSourceHandler.sendEmptyMessage(MESSAGE_CHECK_FOR_FAILURE);
-            return true;
-          case MESSAGE_CHECK_FOR_FAILURE:
-            try {
-              if (mediaPeriod == null) {
-                checkNotNull(mediaSource).maybeThrowSourceInfoRefreshError();
-              } else {
-                mediaPeriod.maybeThrowPrepareError();
+        try {
+          switch (msg.what) {
+            case MESSAGE_PREPARE_SOURCE:
+              MediaItem mediaItem = (MediaItem) msg.obj;
+              mediaSource = mediaSourceFactory.createMediaSource(mediaItem);
+              mediaSource.prepareSource(
+                  mediaSourceCaller, /* mediaTransferListener= */ null, PlayerId.UNSET);
+              mediaSourceHandler.sendEmptyMessage(MESSAGE_CHECK_FOR_FAILURE);
+              return true;
+            case MESSAGE_CHECK_FOR_FAILURE:
+              try {
+                if (mediaPeriod == null) {
+                  checkNotNull(mediaSource).maybeThrowSourceInfoRefreshError();
+                } else {
+                  mediaPeriod.maybeThrowPrepareError();
+                }
+                mediaSourceHandler.sendEmptyMessageDelayed(
+                    MESSAGE_CHECK_FOR_FAILURE, /* delayMs= */ ERROR_POLL_INTERVAL_MS);
+              } catch (IOException e) {
+                onFailureListener.onFailure(e);
+                release();
               }
-              mediaSourceHandler.sendEmptyMessageDelayed(
-                  MESSAGE_CHECK_FOR_FAILURE, /* delayMs= */ ERROR_POLL_INTERVAL_MS);
-            } catch (IOException e) {
-              onFailureListener.onFailure(e);
-              release();
-            }
-            return true;
-          case MESSAGE_CONTINUE_LOADING:
-            checkNotNull(mediaPeriod)
-                .continueLoading(new LoadingInfo.Builder().setPlaybackPositionUs(0).build());
-            return true;
-          case MESSAGE_RELEASE:
-            if (mediaPeriod != null) {
-              checkNotNull(mediaSource).releasePeriod(mediaPeriod);
-            }
-            if (mediaSource != null) {
-              mediaSource.releaseSource(mediaSourceCaller);
-            }
-            mediaSourceHandler.removeCallbacksAndMessages(/* token= */ null);
-            SHARED_WORKER_THREAD.removeWorker();
-            released = true;
-            return true;
-          default:
-            return false;
+              return true;
+            case MESSAGE_CONTINUE_LOADING:
+              checkNotNull(mediaPeriod)
+                  .continueLoading(new LoadingInfo.Builder().setPlaybackPositionUs(0).build());
+              return true;
+            case MESSAGE_RELEASE:
+              try {
+                if (mediaPeriod != null) {
+                  checkNotNull(mediaSource).releasePeriod(mediaPeriod);
+                }
+                if (mediaSource != null) {
+                  mediaSource.releaseSource(mediaSourceCaller);
+                }
+              } finally {
+                mediaSourceHandler.removeCallbacksAndMessages(/* token= */ null);
+                SHARED_WORKER_THREAD.removeWorker();
+                released = true;
+              }
+              return true;
+            default:
+              return false;
+          }
+        } catch (RuntimeException e) {
+          onFailureListener.onFailure(e);
+          release();
+          return true;
         }
       }
 
@@ -437,7 +446,8 @@ public final class MetadataRetrieverInternal implements AutoCloseable {
     /** The maximum number of parallel metadata retrieval operations. */
     // TODO(b/442827020): When MetadataRetrieverInternal is moved to the inspector module, update
     // this to use a DEFAULT_MAXIMUM_PARALLEL_RETRIEVALS constant defined within
-    // androidx.media3.inspector.MetadataRetriever.
+    // androidx.media3.inspector.MetadataRetriever (and remove the deprecation suppression).
+    @SuppressWarnings("deprecation")
     public static final AtomicInteger MAX_PARALLEL_RETRIEVALS =
         new AtomicInteger(MetadataRetriever.DEFAULT_MAXIMUM_PARALLEL_RETRIEVALS);
 
