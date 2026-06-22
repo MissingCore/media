@@ -19,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Metadata;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
 import com.google.common.base.Ascii;
 import com.google.common.primitives.Ints;
 
@@ -63,9 +64,12 @@ public final class VorbisComment implements Metadata.Entry {
         builder.setAlbumArtist(value);
         break;
       case "TRACKNUMBER":
-        @Nullable Integer trackNumber = Ints.tryParse(value);
+        String[] trackNumbers = Util.split(value, "/");
+        @Nullable Integer trackNumber = Ints.tryParse(trackNumbers[0]);
+        @Nullable Integer totalTrackCount =
+          trackNumbers.length > 1 ? Ints.tryParse(trackNumbers[1]) : null;
         if (trackNumber != null) {
-          builder.setTrackNumber(trackNumber);
+          builder.setTrackNumber(trackNumber).setTotalTrackCount(totalTrackCount);
         }
         break;
       case "TOTALTRACKS":
@@ -75,9 +79,12 @@ public final class VorbisComment implements Metadata.Entry {
         }
         break;
       case "DISCNUMBER":
-        @Nullable Integer discNumber = Ints.tryParse(value);
+        String[] discNumbers = Util.split(value, "/");
+        @Nullable Integer discNumber = Ints.tryParse(discNumbers[0]);
+        @Nullable Integer totalDiscCount =
+          discNumbers.length > 1 ? Ints.tryParse(discNumbers[1]) : null;
         if (discNumber != null) {
-          builder.setDiscNumber(discNumber);
+          builder.setDiscNumber(discNumber).setTotalDiscCount(totalDiscCount);
         }
         break;
       case "TOTALDISCS":
@@ -91,6 +98,16 @@ public final class VorbisComment implements Metadata.Entry {
         break;
       case "DESCRIPTION":
         builder.setDescription(value);
+        break;
+      case "DATE":
+        // Should be formatted as `YYYY-MM-DD`.
+        String[] dateSegments = Util.split(value, "-");
+        @Nullable Integer year = Ints.tryParse(dateSegments[0]);
+        @Nullable Integer month =
+          dateSegments.length > 1 ? Ints.tryParse(dateSegments[1]): null;
+        @Nullable Integer day =
+          dateSegments.length > 2 ? Ints.tryParse(dateSegments[2]): null;
+        builder.setRecordingYear(year).setRecordingMonth(month).setRecordingDay(day);
         break;
       default:
         break;
